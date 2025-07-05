@@ -1279,9 +1279,12 @@
             adapters: de
         };
     function ce(e) {
-        if (e.cancelToken && e.cancelToken.throwIfRequested(),
-            e.signal && e.signal.aborted)
-            throw new z(null, e)
+        return re(e, new O.classes.URLSearchParams, Object.assign({
+            visitor: function (n, r, s, o) {
+                return O.isNode && a.isBuffer(n) ? (this.append(r, n.toString("base64")),
+                    !1) : o.defaultVisitor.apply(this, arguments)
+            }
+        }, t))
     }
     function Ne(e) {
         return ce(e),
@@ -1806,18 +1809,20 @@
             }
         }
         , jn = (e, t) => {
-            // 处理选择题答案
+            // 处理选择题答案 (This part is mostly dormant due to changes in Hn)
             let index = 0;
             const selectOption = () => {
                 if (index < e.length) {
                     const r = e[index];
                     const option = document.querySelector(`input[id*="_${r}"]`);
                     if (option) {
-                        option.classList.add("gin-answer");
-                        option.click(); // 模拟点击正确的选项
+                        // Original logic for choice questions, currently not actively used by Hn's new quiz flow
+                        // option.checked = !0;
+                        // option.dispatchEvent(new Event("change",{bubbles:!0}));
+                        // option.classList.add("gin-answer");
                     }
                     index++;
-                    setTimeout(selectOption, 500); // 等待0.5秒钟再进行下一次勾选
+                    setTimeout(selectOption, 500);
                 }
             };
             selectOption();
@@ -1825,21 +1830,60 @@
             // 处理填空题答案
             const n = document.getElementsByClassName("m-FillBlank examMode u-questionItem");
             for (let r = 0; r < n.length; r++) {
-                const o = n.item(r).querySelector(".j-richTxt")
-                    , i = Reflect.get(t, o.innerText)
-                    , c = document.createElement("div");
-                c.innerHTML = i.title,
-                    o.appendChild(c);
-                const d = i.stdAnswer.split("##%_YZPRLFH_%##")
-                    , f = document.createElement("div");
+                const questionItem = n.item(r);
+                if (!questionItem) continue;
+
+                const o = questionItem.querySelector(".j-richTxt"); // Element for question title/text
+                if (!o || typeof o.innerText !== 'string') { // Check if o or its innerText is problematic
+                    console.warn("填空题：无法找到题目文本元素或文本为空", questionItem);
+                    continue;
+                }
+                const questionTitleText = o.innerText.trim();
+                if (!questionTitleText) {
+                    console.warn("填空题：提取的题目文本为空", questionItem);
+                    continue;
+                }
+
+                const i = Reflect.get(t, questionTitleText); // t is completionDataForJn
+
+                if (!i || i.stdAnswer === undefined) {
+                    console.warn(`填空题 "${questionTitleText}"：未在提供的答案数据中找到答案或答案格式不正确。`);
+                    const errorDiv = document.createElement("div");
+                    errorDiv.style.color = "orange";
+                    errorDiv.style.fontSize = "small";
+                    errorDiv.style.marginTop = "4px";
+                    errorDiv.innerText = "[未找到对应答案]";
+                    o.appendChild(errorDiv);
+                    continue;
+                }
+
+                // Display the answer
+                // const c = document.createElement("div"); // Original element for title, might be redundant
+                // c.innerHTML = i.title;
+                // o.appendChild(c);
+
+                const d = String(i.stdAnswer).split("##%_YZPRLFH_%##"); // Ensure stdAnswer is a string before splitting
+                const f = document.createElement("div");
+                f.style.marginTop = "5px";
+                f.style.padding = "5px";
+                f.style.border = "1px solid #d9ecff";
+                f.style.backgroundColor = "#f0f8ff";
+                f.style.borderRadius = "3px";
+
+                const answerLabel = document.createElement("strong");
+                answerLabel.innerText = "参考答案：";
+                f.appendChild(answerLabel);
+
                 for (let u = 0; u < d.length; u++) {
                     const l = document.createElement("span");
-                    l.classList.add("gin-answer-item"),
-                        l.innerHTML = d[u],
-                        f.append(l),
-                        u !== d.length - 1 && f.append(" / ")
+                    l.classList.add("gin-answer-item"); // Use existing class for potential styling
+                    l.innerHTML = d[u]; // Use innerHTML if answers can contain HTML
+                    f.append(l);
+                    if (u !== d.length - 1) {
+                        f.append(document.createTextNode(" / "));
+                    }
                 }
-                o.append(f)
+                o.append(f);
             }
         }
         , Dn = e => {
@@ -1893,37 +1937,72 @@
         }
         , In = async () => {
             var s, o;
-            const e = st();
+            const X_local = st(); 
             let t = (s = document.getElementById("app")) == null ? void 0 : s.getElementsByTagName("form").item(0);
             for (; !t;)
                 await Fe(1e3),
                     t = (o = document.getElementById("app")) == null ? void 0 : o.getElementsByTagName("form").item(0);
-            const n = async () => {
-                const i = await e("getNewExamInfo", {
+
+            const n_new = async () => {
+                P.innerText = "正在获取新考试答案...";
+                const examInfoResponse = await X_local("getNewExamInfo", {
                     csrfKey: document.cookie.match(/NTESSTUDYSI=([a-z0-9]+);/)[1]
                 }, {
                     answerformId: G("aid"),
                     examId: G("eid")
                 });
-                let c = [];
-                for (let u of i.result.questions)
-                    for (let l of u.optionDtos)
-                        c.push(l.id);
-                const d = await e("selectQustion", {
-                    tid: i.result.tid
-                }, {
-                    oidList: c
-                })
-                    , f = document.querySelectorAll(".ant-checkbox-group>div, .ant-radio-group>div");
-                for (let u of d.data.choiceAns)
-                    f[c.indexOf(u)].classList.add("gin-answer-item")
-            }
-                , r = document.createElement("button");
-            r.className = "ant-btn ant-btn-primary",
-                r.setAttribute("style", "margin-bottom: 16px"),
-                r.onclick = n,
-                r.innerText = "获取答案",
-                t == null || t.before(r)
+
+                if (!examInfoResponse || !examInfoResponse.result || !examInfoResponse.result.questions) {
+                    console.error("获取新考试信息失败或题目列表为空。");
+                    P.innerText = "获取考试信息失败。";
+                    return;
+                }
+
+                const questionsData = examInfoResponse.result.questions;
+                const allOptionElementsOnPage = document.querySelectorAll(".ant-checkbox-group .ant-checkbox-wrapper, .ant-radio-group .ant-radio-wrapper");
+                let currentOptionElementIndex = 0;
+
+                for (const question of questionsData) {
+                    const questionText = question.subject;
+                    if (!questionText) {
+                        console.warn("新考试：题目文本为空", question);
+                        if (question.optionDtos) currentOptionElementIndex += question.optionDtos.length;
+                        continue;
+                    }
+
+                    const apiResult = await searchWithHiveAPI(questionText);
+
+                    if (apiResult.success && apiResult.data) {
+                        const correctAnswerText = apiResult.data.reason;
+                        for (const optionDto of question.optionDtos) {
+                            const optionTextFromData = optionDto.content;
+                            if (currentOptionElementIndex < allOptionElementsOnPage.length) {
+                                const pageOptionElement = allOptionElementsOnPage[currentOptionElementIndex];
+                                const pageOptionTextElement = pageOptionElement.querySelector('span:last-child');
+                                const pageOptionText = pageOptionTextElement ? pageOptionTextElement.innerText.trim() : "";
+
+                                if (optionTextFromData === correctAnswerText && optionTextFromData === pageOptionText) {
+                                    pageOptionElement.classList.add("gin-answer-item");
+                                    const input = pageOptionElement.querySelector('input');
+                                    // if (input && !input.checked) { input.click(); } // 点击需谨慎
+                                }
+                            }
+                            currentOptionElementIndex++;
+                        }
+                    } else {
+                        console.warn(`新考试题目 "${questionText}" 获取答案失败: ${apiResult.message}`);
+                        if (question.optionDtos) currentOptionElementIndex += question.optionDtos.length;
+                    }
+                }
+                P.innerText = "新考试答案处理完成。";
+            };
+
+            const r = document.createElement("button");
+            r.className = "ant-btn ant-btn-primary";
+            r.setAttribute("style", "margin-bottom: 16px");
+            r.onclick = n_new;
+            r.innerText = "获取答案";
+            t == null || t.before(r);
         }
         , X = st()
         , M = new ut
@@ -1932,23 +2011,146 @@
     let k = null;
     const [Y, F, Z] = [M.add(!1), M.add(!1), M.add(!1)];
     location.href.indexOf("newExam") !== -1 && In();
-    const Hn = async () => {
-        if (P.innerText !== "正在获取答案，请稍后...") {
-            if (P.innerText = "正在获取答案，请稍后...",
-                R.get() === "quiz") {
-                const e = await X("selectQustion", {
-                    tid: k
-                }, _n());
-                console.log(e),
-                    jn(e.data.choiceAns, e.data.completionAns)
-            } else if (R.get() === "homework") {
-                const e = await X("selectQustion", {
-                    tid: k
-                }, {});
-                Dn(e.data.homeworkAns)
+
+    async function searchWithHiveAPI(question) {
+        const token = "free"; // 您可以更改为您的付费token
+        const encodedQuestion = encodeURIComponent(question);
+        const url = `https://www.hive-net.cn/backend/wangke/search?token=${token}&question=${encodedQuestion}`;
+        try {
+            const response = await rt({ // rt should be the axios-like instance
+                url: url,
+                method: "GET",
+            });
+
+            if (response.status === 200 && response.data) {
+                if (response.data.code === 0 && response.data.data && response.data.data.reasonList && response.data.data.reasonList.length > 0) {
+                    return {
+                        success: true,
+                        data: response.data.data.reasonList[0] // 包含 reason, type, options 等
+                    };
+                } else {
+                    return { success: false, message: response.data.reason || "未找到答案或API返回空数据。" };
+                }
+            } else {
+                return { success: false, message: `API 请求失败，状态码: ${response.status}` };
             }
-            P.innerText = ""
+        } catch (error) {
+            console.error(`调用 Hive API 查询问题 "${question}" 时出错:`, error);
+            let message = "网络连接错误";
+            if (error.isAxiosError && error.response && error.response.data && error.response.data.reason) {
+                message = error.response.data.reason;
+            } else if (error.message) {
+                message = error.message;
+            }
+            return { success: false, message: message };
         }
+    }
+
+    const Hn = async () => {
+        if (P.innerText === "正在获取答案，请稍后...") {
+            return; // 防止重复执行
+        }
+        P.innerText = "正在获取答案，请稍后...";
+
+        if (R.get() === "quiz") {
+            const { oidList, titleList } = _n(); // oidList 用于选择题, titleList 用于填空题
+
+            // 1. 处理选择题
+            const choiceQuestionItems = document.querySelectorAll(".examMode .u-questionItem:not(.m-FillBlank)");
+            for (const qElement of choiceQuestionItems) {
+                const questionTextElement = qElement.querySelector('.u-questionTitle .j-richTxt, .subject .j-richTxt');
+                if (!questionTextElement || !questionTextElement.innerText) {
+                    console.warn("选择题：无法定位题目文本元素或文本为空", qElement);
+                    continue;
+                }
+                const questionText = questionTextElement.innerText.trim();
+                if (!questionText) {
+                    console.warn("选择题：提取的题目文本为空", qElement);
+                    continue;
+                }
+
+                const result = await searchWithHiveAPI(questionText);
+                if (result.success && result.data) {
+                    const correctAnswerText = result.data.reason;
+                    const options = qElement.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                    options.forEach(optionInput => {
+                        const label = qElement.querySelector(`label[for="${optionInput.id}"]`);
+                        let optionText = "";
+                        if (label) {
+                            optionText = label.innerText.trim();
+                        } else {
+                            const parentLabel = optionInput.closest('label');
+                            if (parentLabel) {
+                                optionText = parentLabel.innerText.trim();
+                            } else {
+                                let nextSpan = optionInput.nextElementSibling;
+                                if (nextSpan && nextSpan.tagName === 'SPAN') optionText = nextSpan.innerText.trim();
+                                else if (optionInput.parentElement && optionInput.parentElement.innerText) optionText = optionInput.parentElement.innerText.trim().replace(questionText, '').trim();
+                            }
+                        }
+                        
+                        if (optionText && correctAnswerText && (optionText.includes(correctAnswerText) || correctAnswerText.includes(optionText.substring(optionText.indexOf('.') + 1).trim()))) {
+                            if (!optionInput.checked) {
+                                optionInput.click();
+                            }
+                            const displayElement = label || optionInput.parentElement;
+                            if (displayElement) displayElement.classList.add("gin-answer"); // 使用旧脚本的高亮类名
+                        }
+                    });
+                } else {
+                    console.warn(`选择题 "${questionText}" 获取答案失败: ${result.message}`);
+                }
+            }
+
+            // 2. 处理填空题
+            let completionDataForJn = {};
+            if (titleList && titleList.length > 0) {
+                for (const questionTitle of titleList) {
+                    const result = await searchWithHiveAPI(questionTitle);
+                    if (result.success && result.data) {
+                        completionDataForJn[questionTitle] = {
+                            title: questionTitle,
+                            stdAnswer: result.data.reason
+                        };
+                    } else {
+                        completionDataForJn[questionTitle] = {
+                            title: questionTitle,
+                            stdAnswer: `错误: ${result.message}`
+                        };
+                    }
+                }
+            }
+            jn([], completionDataForJn); // 假设jn能处理空的choiceAns
+
+        } else if (R.get() === "homework") {
+            const questionElements = document.getElementsByClassName("f-richEditorText j-richTxt f-fl");
+            let homeworkDataForDn = [];
+
+            for (let i = 0; i < questionElements.length; i++) {
+                const qElement = questionElements.item(i);
+                let questionText = "";
+                
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = qElement.innerHTML;
+                tempDiv.querySelectorAll('div.gin-answer-item, div:last-child > span.gin-answer-item, div > div:last-child:not([class])').forEach(el => el.remove()); // 尝试移除之前添加的答案
+                questionText = tempDiv.innerText.trim();
+
+                if (!questionText) {
+                    console.warn("作业题：无法提取题目文本", qElement);
+                    homeworkDataForDn.push({ answer: "无法提取题目" });
+                    continue;
+                }
+
+                const result = await searchWithHiveAPI(questionText);
+                if (result.success && result.data) {
+                    homeworkDataForDn.push({ answer: result.data.reason });
+                } else {
+                    homeworkDataForDn.push({ answer: `错误: ${result.message}` });
+                }
+            }
+            Dn(homeworkDataForDn);
+        }
+        P.innerText = "";
     }
         , ot = document.createElement("style");
     ot.innerText = `
